@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CT URU · Centro de Formatos</title>
+<link rel="stylesheet" href="assets/estilos.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>🏢 CT URU · Centro de Formatos</h1>
+  <p>Captura · Almacén por COPE · Búsqueda · Mapa · Comisiones</p>
+  <nav class="tabs" id="tabs">
+    <button data-tab="captura" class="active">📝 Captura</button>
+    <button data-tab="registros">🗂️ Registros</button>
+    <button data-tab="buscar">🔍 Buscar</button>
+    <button data-tab="mapa">🗺️ Mapa</button>
+    <a href="comisiones.html">💰 Comisiones</a>
+  </nav>
+</header>
+
+<main class="wrap">
+
+  <!-- ══════════ CAPTURA ══════════ -->
+  <section id="tab-captura" class="panel active">
+    <div class="card">
+      <h2>1 · Selecciona el formato</h2>
+      <p class="sub">Elige el tipo de reporte que vas a llenar.</p>
+      <div class="chips" id="chips-formatos"></div>
+
+      <h2 style="margin-top:8px">2 · Llena la información</h2>
+      <p class="sub" id="fmt-desc">Selecciona un formato para comenzar.</p>
+      <form id="formato-form" class="grid" autocomplete="off"></form>
+    </div>
+
+    <div class="card">
+      <h2>3 · Vista previa</h2>
+      <p class="sub">Así se pegará en WhatsApp. Verifica antes de compartir.</p>
+      <pre class="preview" id="preview">— Selecciona un formato —</pre>
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-guardar">💾 Guardar en almacén</button>
+        <button class="btn btn-wa" id="btn-compartir">📲 Compartir por WhatsApp</button>
+        <button class="btn btn-ghost" id="btn-copiar">📋 Solo copiar</button>
+        <button class="btn btn-ghost" id="btn-limpiar">🧹 Limpiar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ REGISTROS ══════════ -->
+  <section id="tab-registros" class="panel">
+    <div class="card">
+      <h2>Almacén por COPE</h2>
+      <p class="sub">Cada COPE nuevo crea automáticamente su propia pestaña.</p>
+      <div class="chips" id="chips-copes"></div>
+      <div id="tabla-registros"></div>
+      <div class="actions">
+        <button class="btn btn-ghost" id="btn-exportar">⬇️ Exportar JSON</button>
+        <button class="btn btn-ghost" id="btn-importar">⬆️ Importar JSON</button>
+        <input type="file" id="file-import" accept=".json" hidden>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ BUSCAR ══════════ -->
+  <section id="tab-buscar" class="panel">
+    <div class="card">
+      <h2>Búsqueda avanzada</h2>
+      <p class="sub">Filtra por serial, OS, fecha o texto libre.</p>
+      <div class="grid">
+        <div class="field"><label>Número de serie</label>
+          <input id="q-serie" list="lista-seriales" placeholder="ZTEG26066C70">
+          <datalist id="lista-seriales"></datalist>
+        </div>
+        <div class="field"><label>Orden de servicio (OS)</label>
+          <input id="q-os" placeholder="071349704"></div>
+        <div class="field"><label>Desde</label><input id="q-desde" type="date"></div>
+        <div class="field"><label>Hasta</label><input id="q-hasta" type="date"></div>
+        <div class="field"><label>COPE</label><select id="q-cope"><option value="">Todos</option></select></div>
+        <div class="field"><label>Formato</label><select id="q-fmt"><option value="">Todos</option></select></div>
+        <div class="field full"><label>Texto libre</label>
+          <input id="q-texto" placeholder="Titular, teléfono, distrito, terminal…"></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-buscar">🔍 Buscar</button>
+        <button class="btn btn-ghost" id="btn-limpiar-busqueda">Limpiar</button>
+      </div>
+    </div>
+    <div class="card"><div id="resultados-busqueda"></div></div>
+  </section>
+
+  <!-- ══════════ MAPA ══════════ -->
+  <section id="tab-mapa" class="panel">
+    <div class="card">
+      <h2>Ubicación domicilio ↔ terminal</h2>
+      <p class="sub">Selecciona un registro o escribe coordenadas manualmente.</p>
+      <div class="grid">
+        <div class="field"><label>Registro guardado</label>
+          <select id="mapa-registro"><option value="">— Manual —</option></select></div>
+        <div class="field"><label>Coordenadas domicilio</label>
+          <input id="mapa-dom" placeholder="19.390925, -102.046743"></div>
+        <div class="field"><label>Coordenadas terminal</label>
+          <input id="mapa-ter" placeholder="19.390887, -102.046914"></div>
+        <div class="field"><label>Nombre de la terminal</label>
+          <input id="mapa-nombre-ter" placeholder="LPN7004FOC7"></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-dibujar">📍 Dibujar</button>
+        <button class="btn btn-ghost" id="btn-mi-ubicacion">🛰️ Usar mi ubicación</button>
+      </div>
+    </div>
+    <div class="card"><div id="mapa"></div></div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="lib/formatos.js"></script>
+<script src="lib/almacen.js"></script>
+<script src="lib/comisiones.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="lib/mapa.js"></script>
+<script>
+/* ══════════════════════════════════════════════════════════════
+   APP · Dashboard
+   ══════════════════════════════════════════════════════════════ */
+(() => {
+'use strict';
+
+/* ⚠️ Cambia esto por el enlace real de tu grupo */
+const WHATSAPP_GRP = 'https://chat.whatsapp.com/TU_CODIGO_DE_INVITACION';
+
+const $  = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+/* ── Toast ─────────────────────────────────────────────── */
+let toastTimer;
+function toast(msg, tipo = '') {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + tipo;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = 'toast ' + tipo, 3200);
+}
+
+/* ── Portapapeles con fallback ─────────────────────────── */
+async function copiar(texto) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(texto);
+      return true;
+    }
+  } catch {}
+  const ta = document.createElement('textarea');
+  ta.value = texto;
+  ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch {}
+  document.body.removeChild(ta);
+  return ok;
+}
+
+/* ══════════════════════════════════════════════════════════
+   TABS
+   ══════════════════════════════════════════════════════════ */
+$$('#tabs button').forEach(b => b.addEventListener('click', () => {
+  $$('#tabs button').forEach(x => x.classList.toggle('active', x === b));
+  $$('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + b.dataset.tab));
+  if (b.dataset.tab === 'mapa') setTimeout(() => mapa && mapa.invalidateSize(), 120);
+}));
+
+/* ══════════════════════════════════════════════════════════
+   CAPTURA
+   ══════════════════════════════════════════════════════════ */
+let formatoActual = null;
+let datosActuales = {};
+
+/* Chips de formatos */
+const chipsFmt = $('#chips-formatos');
+Formatos.lista().forEach(f => {
+  const c = document.createElement('button');
+  c.className = 'chip';
+  c.type = 'button';
+  c.dataset.id = f.id;
+  c.textContent = `${f.icono} ${f.nombre}`;
+  c.onclick = () => seleccionarFormato(f.id);
+  chipsFmt.appendChild(c);
+});
+
+function seleccionarFormato(id) {
+  formatoActual = Formatos.obtener(id);
+  if (!formatoActual) return;
+
+  $$('#chips-formatos .chip').forEach(c =>
+    c.classList.toggle('active', c.dataset.id === id));
+
+  $('#fmt-desc').textContent = `Formato: ${formatoActual.nombre}`;
+  construirFormulario(formatoActual);
+}
+
+function construirFormulario(f) {
+  const form = $('#formato-form');
+  form.innerHTML = '';
+  datosActuales = {};
+
+  f.campos.forEach(c => {
+    const wrap = document.createElement('div');
+    wrap.className = 'field' + (c.tipo === 'textarea' ? ' full' : '');
+
+    const lab = document.createElement('label');
+    lab.htmlFor = 'f-' + c.k;
+    lab.innerHTML = c.label + (c.req ? ' <span class="req">*</span>' : '');
+    wrap.appendChild(lab);
+
+    let el;
+    if (c.tipo === 'textarea') {
+      el = document.createElement('textarea');
+    } else if (c.tipo === 'select') {
+      el = document.createElement('select');
+      const o0 = document.createElement('option');
+      o0.value = ''; o0.textContent = '— Selecciona —';
+      el.appendChild(o0);
+      (c.opciones || []).forEach(o => {
+        const op = document.createElement('option');
+        op.value = o; op.textContent = o;
+        el.appendChild(op);
+      });
+    } else if (c.tipo === 'check') {
+      wrap.className = 'field';
+      const row = document.createElement('label');
+      row.className = 'check-row';
+      el = document.createElement('input');
+      el.type = 'checkbox';
+      el.id = 'f-' + c.k;
+      el.checked = !!c.def;
+      row.appendChild(el);
+      row.appendChild(document.createTextNode(' ' + c.label));
+      wrap.innerHTML = '';
+      wrap.appendChild(row);
+      form.appendChild(wrap);
+      el.addEventListener('change', () => { recoger(); refrescarPreview(); });
+      datosActuales[c.k] = el.checked;
+      return;
+    } else {
+      el = document.createElement('input');
+      el.type = c.tipo === 'coords' ? 'text'
+              : c.tipo === 'tel'   ? 'tel'
+              : c.tipo;
+      if (c.tipo === 'number') el.min = '0';
+    }
+
+    el.id = 'f-' + c.k;
+    if (c.placeholder) el.placeholder = c.placeholder;
+    if (c.tipo === 'coords') el.placeholder = '19.390925, -102.046743';
+
+    const def = typeof c.def === 'function' ? c.def() : c.def;
+    if (def !== undefined && def !== null) el.value = def;
+
+    el.addEventListener('input', () => { recoger(); refrescarPreview(); });
+    el.addEventListener('change', () => { recoger(); refrescarPreview(); });
+
+    wrap.appendChild(el);
+    form.appendChild(wrap);
+  });
+
+  recoger();
+  refrescarPreview();
+}
+
+function recoger() {
+  if (!formatoActual) return;
+  const d = {};
+  for (const c of formatoActual.campos) {
+    const el = document.getElementById('f-' + c.k);
+    if (!el) continue;
+    d[c.k] = c.tipo === 'check' ? el.checked : el.value.trim();
+  }
+  datosActuales = d;
+}
+
+function validar() {
+  if (!formatoActual) return { ok: false, msg: 'Selecciona un formato primero.' };
+  for (const c of formatoActual.campos) {
+    if (!c.req) continue;
+    const v = datosActuales[c.k];
+    if (c.tipo === 'check') continue;
+    if (v === '' || v == null) {
+      return { ok: false, msg: `Falta: ${c.label}` };
+    }
+  }
+  return { ok: true };
+}
+
+function refrescarPreview() {
+  if (!formatoActual) return;
+  try {
+    $('#preview').textContent = formatoActual.construir(datosActuales);
+  } catch (e) {
+    $('#preview').textContent = '⚠️ ' + e.message;
+  }
+}
+
+/* ── Botones de acción ─────────────────────────────────── */
+$('#btn-copiar').onclick = async () => {
+  const v = validar();
+  if (!v.ok) return toast(v.msg, 'err');
+  (await copiar($('#preview').textContent))
+    ? toast('✅ Copiado al portapapeles', 'ok')
+    : toast('No se pudo copiar', 'err');
+};
+
+$('#btn-compartir').onclick = async () => {
+  const v = validar();
+  if (!v.ok) return toast(v.msg, 'err');
+
+  const texto = $('#preview').textContent;
+
+  // 1) Guardar automáticamente en el almacén (crea pestaña de COPE si hace falta)
+  const res = Almacen.guardar({
+    formatoId: formatoActual.id,
+    formatoNombre: formatoActual.nombre,
+    datos: { ...datosActuales },
+    texto,
+  });
+
+  // 2) Copiar
+  const copiado = await copiar(texto);
+
+  // 3) Abrir WhatsApp
+  window.open(WHATSAPP_GRP, '_blank', 'noopener');
+
+  if (copiado) {
+    toast(res.creada
+      ? `📋 Copiado · nueva pestaña "${res.nombre}" creada`
+      : `📋 Copiado · guardado en "${res.nombre}"`, 'ok');
+  } else {
+    toast('Se abrió WhatsApp, pero copia manualmente (Ctrl+C)', 'err');
+  }
+
+  refrescarRegistros();
+  refrescarSelectorMapa();
+  refrescarDatalist();
+};
+
+$('#btn-guardar').onclick = () => {
+  const v = validar();
+  if (!v.ok) return toast(v.msg, 'err');
+  const res = Almacen.guardar({
+    formatoId: formatoActual.id,
+    formatoNombre: formatoActual.nombre,
+    datos: { ...datosActuales },
+    texto: $('#preview').textContent,
+  });
+  toast(res.creada
+    ? `💾 Guardado · nueva pestaña "${res.nombre}"`
+    : `💾 Guardado en "${res.nombre}"`, 'ok');
+  refrescarRegistros();
+  refrescarSelectorMapa();
+  refrescarDatalist();
+};
+
+$('#btn-limpiar').onclick = () => {
+  if (formatoActual) construirFormulario(formatoActual);
+  toast('Formulario limpiado');
+};
+
+/* ══════════════════════════════════════════════════════════
+   REGISTROS
+   ══════════════════════════════════════════════════════════ */
+let copeSeleccionado = '';
+
+function refrescarRegistros() {
+  const cont = $('#chips-copes');
+  const lista = Almacen.copes();
+  cont.innerHTML = '';
+
+  if (!lista.length) {
+    $('#tabla-registros').innerHTML =
+      '<div class="empty">Aún no hay registros guardados.<br>Captura un formato para comenzar.</div>';
+    return;
+  }
+
+  if (!copeSeleccionado || !lista.some(c => c.nombre === copeSeleccionado))
+    copeSeleccionado = lista[0].nombre;
+
+  lista.forEach(c => {
+    const chip = document.createElement('button');
+    chip.className = 'chip' + (c.nombre === copeSeleccionado ? ' active' : '');
+    chip.type = 'button';
+    chip.textContent = `${c.nombre} (${c.total})`;
+    chip.onclick = () => { copeSeleccionado = c.nombre; refrescarRegistros(); };
+    cont.appendChild(chip);
+  });
+
+  const regs = Almacen.porCope(copeSeleccionado);
+  if (!regs.length) {
+    $('#tabla-registros').innerHTML = '<div class="empty">Esta pestaña está vacía.</div>';
+    return;
+  }
+
+  const rows = regs.map(r => `
+    <tr>
+      <td><span class="badge badge-fmt">${r.formatoNombre}</span></td>
+      <td>${r.fecha || (r.creado || '').slice(0,10)}</td>
+      <td>${r.os || '—'}</td>
+      <td><code>${r.serie || '—'}</code></td>
+      <td>${r.titular || '—'}</td>
+      <td>${r.terminal || '—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost" style="padding:6px 10px;font-size:.75rem"
+                onclick="APP.verTexto('${r.id}')">👁️</button>
+        <button class="btn btn-ghost" style="padding:6px 10px;font-size:.75rem"
+                onclick="APP.verMapa('${r.id}')">📍</button>
+        <button class="btn btn-danger" style="padding:6px 10px;font-size:.75rem"
+                onclick="APP.borrar('${r.id}')">🗑️</button>
+      </td>
+    </tr>`).join('');
+
+  $('#tabla-registros').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Formato</th><th>Fecha</th><th>OS</th><th>Serie</th>
+        <th>Titular</th><th>Terminal</th><th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function buscarReg(id) {
+  return Almacen.todos().find(r => r.id === id);
+}
+
+/* ══════════════════════════════════════════════════════════
+   BÚSQUEDA
+   ══════════════════════════════════════════════════════════ */
+function refrescarDatalist() {
+  const dl = $('#lista-seriales');
+  dl.innerHTML = '';
+  Almacen.seriales().forEach(s => {
+    const o = document.createElement('option');
+    o.value = s;
+    dl.appendChild(o);
+  });
+
+  const sc = $('#q-cope');
+  const val = sc.value;
+  sc.innerHTML = '<option value="">Todos</option>';
+  Almacen.copes().forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.nombre; o.textContent = c.nombre;
+    sc.appendChild(o);
+  });
+  sc.value = val;
+
+  const sf = $('#q-fmt');
+  const val2 = sf.value;
+  sf.innerHTML = '<option value="">Todos</option>';
+  Formatos.lista().forEach(f => {
+    const o = document.createElement('option');
+    o.value = f.id; o.textContent = f.nombre;
+    sf.appendChild(o);
+  });
+  sf.value = val2;
+}
+
+function ejecutarBusqueda() {
+  const q = {
+    serie: $('#q-serie').value,
+    os: $('#q-os').value,
+    desde: $('#q-desde').value,
+    hasta: $('#q-hasta').value,
+    cope: $('#q-cope').value,
+    formatoId: $('#q-fmt').value,
+    texto: $('#q-texto').value,
+  };
+  const res = Almacen.buscar(q);
+  pintarResultados(res, '#resultados-busqueda');
+}
+
+function pintarResultados(res, sel) {
+  const cont = $(sel);
+  if (!res.length) {
+    cont.innerHTML = '<div class="empty">Sin resultados.</div>';
+    return;
+  }
+  cont.innerHTML = `
+    <p class="sub">${res.length} resultado(s)</p>
+    <table>
+      <thead><tr>
+        <th>Formato</th><th>COPE</th><th>Fecha</th><th>OS</th>
+        <th>Serie</th><th>Titular</th><th>Terminal</th><th></th>
+      </tr></thead>
+      <tbody>${res.map(r => `
+        <tr>
+          <td><span class="badge badge-fmt">${r.formatoNombre}</span></td>
+          <td><span class="badge badge-cope">${r.cope}</span></td>
+          <td>${r.fecha || (r.creado||'').slice(0,10)}</td>
+          <td>${r.os || '—'}</td>
+          <td><code>${r.serie || '—'}</code></td>
+          <td>${r.titular || '—'}</td>
+          <td>${r.terminal || '—'}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-ghost" style="padding:6px 10px;font-size:.75rem"
+                    onclick="APP.verTexto('${r.id}')">👁️</button>
+            <button class="btn btn-ghost" style="padding:6px 10px;font-size:.75rem"
+                    onclick="APP.verMapa('${r.id}')">📍</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+$('#btn-buscar').onclick = ejecutarBusqueda;
+$('#btn-limpiar-busqueda').onclick = () => {
+  ['#q-serie','#q-os','#q-desde','#q-hasta','#q-texto'].forEach(s => $(s).value = '');
+  $('#q-cope').value = ''; $('#q-fmt').value = '';
+  $('#resultados-busqueda').innerHTML = '';
+};
+
+/* ══════════════════════════════════════════════════════════
+   MAPA
+   ══════════════════════════════════════════════════════════ */
+let mapa = null;
+
+function initMapa() {
+  if (mapa) return;
+  mapa = MapaCT.crear('mapa');
+}
+
+function refrescarSelectorMapa() {
+  const sel = $('#mapa-registro');
+  const val = sel.value;
+  sel.innerHTML = '<option value="">— Manual —</option>';
+  Almacen.todos().forEach(r => {
+    const o = document.createElement('option');
+    o.value = r.id;
+    o.textContent = `${r.fecha || ''} · ${r.os || 's/OS'} · ${r.titular || r.serie || ''}`;
+    sel.appendChild(o);
+  });
+  sel.value = val;
+}
+
+$('#mapa-registro').onchange = e => {
+  const r = buscarReg(e.target.value);
+  if (!r) return;
+  $('#mapa-dom').value = r.coordsDom || '';
+  $('#mapa-ter').value = r.coordsTer || '';
+  $('#mapa-nombre-ter').value = r.terminal || '';
+  dibujar();
+};
+
+function dibujar() {
+  initMapa();
+  const dom = MapaCT.parseCoords($('#mapa-dom').value);
+  const ter = MapaCT.parseCoords($('#mapa-ter').value);
+  if (!dom && !ter) return toast('Ingresa al menos una coordenada válida', 'err');
+  const info = MapaCT.mostrar(mapa, {
+    domicilio: dom,
+    terminal: ter,
+    nombreTerminal: $('#mapa-nombre-ter').value || 'Terminal',
+    titulo: $('#mapa-registro').selectedOptions[0]?.textContent || '',
+  });
+  if (info.distancia) toast(`📏 Distancia dom ↔ terminal: ${info.distancia.toFixed(0)} m`, 'ok');
+}
+
+$('#btn-dibujar').onclick = dibujar;
+
+$('#btn-mi-ubicacion').onclick = () => {
+  if (!navigator.geolocation) return toast('Geolocalización no disponible', 'err');
+  navigator.geolocation.getCurrentPosition(
+    p => {
+      $('#mapa-dom').value = `${p.coords.latitude.toFixed(6)}, ${p.coords.longitude.toFixed(6)}`;
+      dibujar();
+    },
+    () => toast('No se pudo obtener la ubicación', 'err'),
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+};
+
+/* ══════════════════════════════════════════════════════════
+   EXPORTAR / IMPORTAR
+   ══════════════════════════════════════════════════════════ */
+$('#btn-exportar').onclick = () => {
+  const blob = new Blob([Almacen.exportar()], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ct-uru-almacen-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('⬇️ Respaldo descargado', 'ok');
+};
+
+$('#btn-importar').onclick = () => $('#file-import').click();
+$('#file-import').onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      Almacen.importar(rd.result);
+      refrescarRegistros(); refrescarSelectorMapa(); refrescarDatalist();
+      toast('⬆️ Datos importados', 'ok');
+    } catch { toast('Archivo inválido', 'err'); }
+  };
+  rd.readAsText(f);
+  e.target.value = '';
+};
+
+/* ══════════════════════════════════════════════════════════
+   API global para los onclick de las tablas
+   ══════════════════════════════════════════════════════════ */
+window.APP = {
+  verTexto(id) {
+    const r = buscarReg(id);
+    if (!r) return;
+    if (confirm(r.texto + '\n\n¿Copiar al portapapeles?')) {
+      copiar(r.texto).then(ok => toast(ok ? '📋 Copiado' : 'No se pudo copiar', ok ? 'ok' : 'err'));
+    }
+  },
+  verMapa(id) {
+    const r = buscarReg(id);
+    if (!r) return;
+    $$('#tabs button').forEach(x => x.classList.toggle('active', x.dataset.tab === 'mapa'));
+    $$('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-mapa'));
+    $('#mapa-registro').value = id;
+    $('#mapa-dom').value = r.coordsDom || '';
+    $('#mapa-ter').value = r.coordsTer || '';
+    $('#mapa-nombre-ter').value = r.terminal || '';
+    setTimeout(() => { mapa && mapa.invalidateSize(); dibujar(); }, 150);
+  },
+  borrar(id) {
+    const r = buscarReg(id);
+    if (!r) return;
+    if (!confirm(`¿Eliminar el registro ${r.os || r.serie || r.id}?`)) return;
+    Almacen.eliminar(r.cope, id);
+    refrescarRegistros(); refrescarSelectorMapa(); refrescarDatalist();
+    toast('🗑️ Eliminado', 'ok');
+  },
+};
+
+/* ══════════════════════════════════════════════════════════
+   INIT
+   ══════════════════════════════════════════════════════════ */
+seleccionarFormato(Formatos.lista()[0].id);
+refrescarRegistros();
+refrescarSelectorMapa();
+refrescarDatalist();
+})();
+</script>
+</body>
+</html>

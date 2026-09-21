@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calculadora de Comisiones · Técnico Instalador</title>
+<link rel="stylesheet" href="assets/estilos.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>💰 Calculadora de Comisiones</h1>
+  <p>Esquema semanal · lunes a domingo · sincronizada con la hoja</p>
+  <nav class="tabs">
+    <a href="index.html">🏢 Formatos</a>
+    <button class="active">💰 Comisiones</button>
+  </nav>
+</header>
+
+<main class="wrap">
+
+  <!-- ══ KPIs ══ -->
+  <div class="card">
+    <h2>Resumen del periodo</h2>
+    <p class="sub" id="fuente-datos">Cargando datos…</p>
+    <div class="kpis">
+      <div class="kpi"><div class="n" id="k-contratos">—</div><div class="t">Contratos</div></div>
+      <div class="kpi"><div class="n" id="k-semanas">—</div><div class="t">Semanas</div></div>
+      <div class="kpi"><div class="n" id="k-comision">—</div><div class="t">Comisiones</div></div>
+      <div class="kpi"><div class="n" id="k-total">—</div><div class="t">Total</div></div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" id="btn-sync">🔄 Sincronizar con la hoja</button>
+      <button class="btn btn-ghost" id="btn-subir">⬆️ Subir pendientes</button>
+      <button class="btn btn-ghost" id="btn-local">📦 Usar datos locales</button>
+    </div>
+  </div>
+
+  <!-- ══ Selector manual (respaldo) ══ -->
+  <div class="card">
+    <h2>Cálculo manual</h2>
+    <p class="sub">Selecciona el número de instalaciones para ver el desglose del día.</p>
+    <label class="field-label" for="inst">Instalaciones realizadas</label>
+    <select id="inst"><option value="">— Seleccione una cantidad —</option></select>
+
+    <div id="resultado-manual" style="display:none; margin-top:18px">
+      <table>
+        <tbody>
+          <tr><td>Instalaciones</td><td id="r-inst" style="text-align:right;font-weight:700"></td></tr>
+          <tr><td>Tramo aplicado</td><td id="r-tramo" style="text-align:right;font-weight:700"></td></tr>
+          <tr><td>Tarifa por instalación</td><td id="r-tarifa" style="text-align:right;font-weight:700"></td></tr>
+          <tr><td>Total comisiones</td><td id="r-comision" style="text-align:right;font-weight:700"></td></tr>
+          <tr><td>Sueldo base</td><td id="r-base" style="text-align:right;font-weight:700"></td></tr>
+        </tbody>
+      </table>
+      <div class="total">
+        <div class="lbl">Total a pagar</div>
+        <div class="val" id="r-total">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Desglose semanal ══ -->
+  <div class="card">
+    <h2>Desglose por semana</h2>
+    <p class="sub">Cada semana inicia en lunes. Los contratos se cuentan automáticamente.</p>
+    <div id="tabla-semanas"></div>
+  </div>
+
+  <!-- ══ Detalle ══ -->
+  <div class="card">
+    <h2>Detalle de contratos por semana</h2>
+    <div id="detalle-semanas"></div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="lib/formatos.js"></script>
+<script src="lib/almacen.js"></script>
+<script src="lib/comisiones.js"></script>
+<script>
+(() => {
+'use strict';
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+const fmtMXN = new Intl.NumberFormat('es-MX', {
+  style:'currency', currency:'MXN',
+  minimumFractionDigits:2, maximumFractionDigits:2,
+});
+
+let toastTimer;
+function toast(m, t='') {
+  const el = $('#toast');
+  el.textContent = m; el.className = 'toast show ' + t;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = 'toast ' + t, 3200);
+}
+
+/* ══════════════════════════════════════════════════════════
+   1 · Selector manual
+   ══════════════════════════════════════════════════════════ */
+const selInst = $('#inst');
+for (let i = 1; i <= Comisiones.CONFIG.MAX_INSTALACIONES; i++) {
+  const o = document.createElement('option');
+  o.value = i;
+  o.textContent = `${i} ${i === 1 ? 'instalación' : 'instalaciones'}`;
+  selInst.appendChild(o);
+}
+
+selInst.addEventListener('change', () => {
+  const d = Comisiones.calcular(selInst.value);
+  const box = $('#resultado-manual');
+  if (!d) { box.style.display = 'none'; return; }
+  $('#r-inst').textContent     = d.instalaciones;
+  $('#r-tramo').textContent    = d.tramoLabel;
+  $('#r-tarifa').textContent   = fmtMXN.format(d.tarifa);
+  $('#r-comision').textContent = fmtMXN.format(d.comisionTotal);
+  $('#r-base').textContent     = fmtMXN.format(d.sueldoBase);
+  $('#r-total').textContent    = fmtMXN.format(d.sueldoTotal);
+  box.style.display = 'block';
+});
+
+/* ══════════════════════════════════════════════════════════
+   2 · Fuentes de datos
+   ══════════════════════════════════════════════════════════ */
+
+/** Normaliza filas de la hoja a un formato común. */
+function normalizarFila(f, cope) {
+  const g = (...ks) => {
+    for (const k of ks) {
+      const hit = Object.keys(f).find(x =>
+        x.toLowerCase().replace(/[^a-z0-9]/g,'') === k.toLowerCase().replace(/[^a-z0-9]/g,''));
+      if (hit && f[hit]) return String(f[hit]).trim();
+    }
+    return '';
+  };
+  return {
+    cope: cope || g('cope') || '—',
+    formatoId: 'HOJA',
+    formatoNombre: g('tipo','formato','tiposervicio','tipodeservicio') || 'Contrato',
+    fecha: g('fecha','fechaalta','fechainstalacion'),
+    os: g('os','numeroos','ordenservicio','foliodeos','folioos'),
+    serie: g('serie','numerodeserie','serieont','alfanumerico'),
+    titular: g('titular','cliente','nombrecliente'),
+    telefono: g('telefono','tel','telcliente','contacto'),
+    distrito: g('distrito'),
+    terminal: g('terminal'),
+    coordsDom: g('coordenadasdomicilio','coordenadas','coords'),
+    coordsTer: g('coordenadasterminal','coordenadasterminal'),
+  };
+}
+
+/** Recolecta contratos desde la hoja publicada. */
+async function desdeHoja() {
+  const pestanas = Hojas.pestanasConocidas();
+  const res = await Hojas.leerVarias(pestanas);
+  const out = [];
+  const errores = [];
+
+  for (const [nombre, filas] of Object.entries(res)) {
+    if (!Array.isArray(filas)) { errores.push(nombre); continue; }
+    filas.forEach(f => {
+      const r = normalizarFila(f, nombre);
+      if (r.fecha || r.os || r.serie) out.push(r);
+    });
+  }
+  if (errores.length) console.warn('Pestañas no legibles:', errores);
+  return out;
+}
+
+/** Recolecta contratos desde el almacén local (formatos de instalación). */
+function desdeLocal() {
+  return Almacen.todos().filter(r =>
+    r.formatoId === 'LIQ_FIBRA' || r.formatoId === 'LIQ_COBRE');
+}
+
+/* ══════════════════════════════════════════════════════════
+   3 · Render
+   ══════════════════════════════════════════════════════════ */
+function render(registros, origen) {
+  const grupos = Comisiones.agruparPorSemana(registros);
+
+  $('#fuente-datos').textContent =
+    `${origen} · ${registros.length} contrato(s) · ${grupos.length} semana(s)`;
+
+  const totalContratos = grupos.reduce((a, g) => a + g.contratos, 0);
+  const totalComision  = grupos.reduce((a, g) => a + (g.calculo?.comisionTotal || 0), 0);
+  const totalPagar     = totalComision + (grupos.length ? Comisiones.CONFIG.SUELDO_BASE : 0);
+
+  $('#k-contratos').textContent = totalContratos;
+  $('#k-semanas').textContent   = grupos.length;
+  $('#k-comision').textContent  = fmtMXN.format(totalComision);
+  $('#k-total').textContent     = fmtMXN.format(totalPagar);
+
+  /* Tabla resumen */
+  if (!grupos.length) {
+    $('#tabla-semanas').innerHTML = '<div class="empty">Sin datos aún.<br>Sincroniza la hoja o captura formatos.</div>';
+    $('#detalle-semanas').innerHTML = '';
+    return;
+  }
+
+  $('#tabla-semanas').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Semana</th><th>Periodo</th><th style="text-align:center">Contratos</th>
+        <th style="text-align:right">Tramo</th>
+        <th style="text-align:right">Tarifa</th>
+        <th style="text-align:right">Comisión</th>
+        <th style="text-align:right">Total</th>
+      </tr></thead>
+      <tbody>${grupos.map(g => {
+        const c = g.calculo;
+        return `<tr>
+          <td><b>${g.semana.numero}</b></td>
+          <td>${g.semana.inicio} → ${g.semana.fin}</td>
+          <td style="text-align:center"><b>${g.contratos}</b></td>
+          <td style="text-align:right">${c ? c.tramoLabel : '—'}</td>
+          <td style="text-align:right">${c ? fmtMXN.format(c.tarifa) : '—'}</td>
+          <td style="text-align:right">${c ? fmtMXN.format(c.comisionTotal) : fmtMXN.format(0)}</td>
+          <td style="text-align:right"><b>${c ? fmtMXN.format(c.sueldoTotal) : fmtMXN.format(Comisiones.CONFIG.SUELDO_BASE)}</b></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+
+  /* Detalle */
+  $('#detalle-semanas').innerHTML = grupos.map(g => `
+    <details style="margin-bottom:10px">
+      <summary style="cursor:pointer;font-weight:600;padding:9px 0">
+        ${g.semana.etiqueta} — ${g.contratos} contrato(s)
+      </summary>
+      <table style="margin-top:8px">
+        <thead><tr><th>Fecha</th><th>COPE</th><th>OS</th><th>Serie</th><th>Titular</th><th>Terminal</th></tr></thead>
+        <tbody>${g.registros.map(r => `
+          <tr>
+            <td>${r.fecha || '—'}</td>
+            <td><span class="badge badge-cope">${r.cope || '—'}</span></td>
+            <td>${r.os || '—'}</td>
+            <td><code>${r.serie || '—'}</code></td>
+            <td>${r.titular || '—'}</td>
+            <td>${r.terminal || '—'}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </details>`).join('');
+}
+
+/* ══════════════════════════════════════════════════════════
+   4 · Acciones
+   ══════════════════════════════════════════════════════════ */
+$('#btn-sync').onclick = async () => {
+  $('#fuente-datos').textContent = 'Sincronizando con Google Sheets…';
+  try {
+    const regs = await desdeHoja();
+    if (!regs.length) {
+      render(desdeLocal(), 'Datos locales (la hoja no devolvió filas)');
+      toast('La hoja no devolvió filas; se usan datos locales', 'err');
+    } else {
+      render(regs, 'Google Sheets');
+      toast(`✅ ${regs.length} contratos leídos de la hoja`, 'ok');
+    }
+  } catch (e) {
+    console.error(e);
+    render(desdeLocal(), 'Datos locales (error al leer la hoja)');
+    toast('No se pudo leer la hoja: ' + e.message, 'err');
+  }
+};
+
+$('#btn-local').onclick = () => {
+  render(desdeLocal(), 'Almacén local');
+  toast('📦 Datos locales cargados', 'ok');
+};
+
+$('#btn-subir').onclick = async () => {
+  const pend = Hojas.colaPendiente();
+  if (!pend) return toast('No hay registros pendientes', 'ok');
+
+  toast(`Subiendo ${pend} lote(s)…`);
+  try {
+    const r = await Hojas.vaciarCola();
+    toast(r.enviados ? `⬆️ ${r.enviados} lote(s) enviados` : 'No se pudo enviar', r.enviados ? 'ok' : 'err');
+  } catch (e) {
+    toast('Error al subir: ' + e.message, 'err');
+  }
+};
+
+/* ══════════════════════════════════════════════════════════
+   5 · Init
+   ══════════════════════════════════════════════════════════ */
+(async function init() {
+  render(desdeLocal(), 'Almacén local');
+  // Intento automático de sincronizar con la hoja
+  try {
+    const regs = await desdeHoja();
+    if (regs.length) render(regs, 'Google Sheets');
+  } catch (e) {
+    console.warn('Sincronización inicial fallida:', e.message);
+  }
+  const pend = Hojas.colaPendiente();
+  if (pend) toast(`⚠️ ${pend} lote(s) pendientes de subir`, 'err');
+})();
+})();
+</script>
+</body>
+</html>
