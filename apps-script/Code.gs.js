@@ -20,6 +20,19 @@ const COLUMNAS = [
   'Creado','Actualizado'
 ];
 
+const MAPA_MOVIMIENTO = {
+  'LIQ_FIBRA':        'ALTA',
+  'LIQ_COBRE':        'ALTA',
+  'QUEJA_GARANTIA':   'QUEJA',
+  'RETENCION':        'QUEJA',
+  'OBJECION':         'QUEJA',
+  'RETIRAR_FOLIO':    'MIGRACION',
+  'SUSPENDER_FOLIO':  'MIGRACION',
+};
+
+// En escribir():
+const tipo = MAPA_MOVIMIENTO[f.fuenteFormato] || 'ALTA';
+
 function doPost(e) {
   const out = ContentService.createTextOutput();
   out.setMimeType(ContentService.MimeType.JSON);
