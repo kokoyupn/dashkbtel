@@ -9,6 +9,16 @@
  */
 
 const HOJA_DEFECTO = 'Contratos';
+const COLUMNAS = [
+  'ID','Fecha','Semana','Año','TipoMovimiento','Cope','Área','Distrito',
+  'O.S.','TipoServicio','Titular','Teléfono','TeléfonoContacto','Domicilio',
+  'CoordenadasDomicilio','CoordenadasTerminal','Terminal','Puerto','Secundario',
+  'Principal','PosiciónDG','RemateSalida','RemateEntrada','LocalizaciónCentral',
+  'TipoBajante','MetrosConstruidos','Tecnología','SerieONT','Alfanumérico',
+  'Módem','DIT','RosetaMarfil','ClaroVideo','FolioCV','Fusión','Coship',
+  'TipoLiquidación','Técnico','ExpPersonal','Estado','Motivo','FuenteFormato',
+  'Creado','Actualizado'
+];
 
 function doPost(e) {
   const out = ContentService.createTextOutput();
@@ -62,33 +72,84 @@ function obtenerOCrearHoja(nombre) {
   let sh = ss.getSheetByName(nombre);
   if (!sh) {
     sh = ss.insertSheet(nombre);
-    sh.appendRow(['Fecha','COPE','OS','Serie','Titular','Teléfono',
-                  'Distrito','Terminal','CoordsDomicilio','CoordsTerminal','Formato']);
-    sh.getRange(1, 1, 1, 11).setFontWeight('bold').setBackground('#ff9933');
+    sh.appendRow(COLUMNAS);
+    sh.getRange(1, 1, 1, COLUMNAS.length)
+      .setFontWeight('bold')
+      .setBackground('#ff9933')
+      .setFontColor('#ffffff')
+      .setHorizontalAlignment('center');
     sh.setFrozenRows(1);
+    sh.setColumnWidths(1, COLUMNAS.length, 120);
   }
   return sh;
 }
+
 
 function escribir(nombreHoja, filas) {
   if (!filas.length) return { insertadas: 0 };
   const sh = obtenerOCrearHoja(String(nombreHoja).trim().toUpperCase());
 
-  // Evita duplicados por (OS + Serie)
+  // Deduplicar por (O.S. + SerieONT + Fecha)
   const existentes = leerHoja(sh);
-  const claves = new Set(existentes.map(r => `${r.OS}|${r.Serie}`));
+  const claves = new Set(existentes.map(r =>
+    `${r['O.S.']}|${r['SerieONT']}|${r.Fecha}`));
 
   const nuevas = filas
-    .map(f => ([
-      f.fecha || new Date().toISOString().slice(0, 10),
-      f.cope || '', f.os || '', f.serie || '', f.titular || '',
-      f.telefono || '', f.distrito || '', f.terminal || '',
-      f.coordsDom || '', f.coordsTer || '', f.formatoNombre || '',
-    ]))
-    .filter(r => !claves.has(`${r[2]}|${r[3]}`));
+    .map(f => {
+      const fecha = f.fecha || new Date().toISOString().slice(0, 10);
+      const semana = numeroSemanaISO(new Date(fecha));
+      return [
+        f.id || Utilities.getUuid(),
+        fecha,
+        semana.numero,
+        semana.anio,
+        (f.tipoMovimiento || 'ALTA').toUpperCase(),
+        f.cope || '',
+        f.area || '',
+        f.distrito || '',
+        f.os || '',
+        f.tipoServicio || '',
+        f.titular || '',
+        f.telefono || '',
+        f.telefonoContacto || '',
+        f.domicilio || '',
+        f.coordsDom || '',
+        f.coordsTer || '',
+        f.terminal || '',
+        f.puerto || '',
+        f.secundario || '',
+        f.principal || '',
+        f.posDG || '',
+        f.remSalida || '',
+        f.remEntrada || '',
+        f.locCentral || '',
+        f.bajante || '',
+        f.metros || 0,
+        (f.tecnologia || 'FIBRA').toUpperCase(),
+        f.serieONT || f.serie || '',
+        f.alfanum || '',
+        f.modem ? 'SI' : 'NO',
+        f.dit ? 'SI' : 'NO',
+        f.roseta ? 'SI' : 'NO',
+        f.claroVideo || 'N/A',
+        f.folioCV || '',
+        f.fusion || 'N/A',
+        f.coship || 'N/A',
+        (f.tipoLiq || 'TAC').toUpperCase(),
+        f.tecnico || '',
+        f.exp || '',
+        f.estado || 'ACTIVO',
+        f.motivo || '',
+        f.fuenteFormato || f.formatoId || '',
+        new Date().toISOString(),
+        ''
+      ];
+    })
+    .filter(r => !claves.has(`${r[8]}|${r[27]}|${r[1]}`));
 
   if (nuevas.length) {
-    sh.getRange(sh.getLastRow() + 1, 1, nuevas.length, 11).setValues(nuevas);
+    sh.getRange(sh.getLastRow() + 1, 1, nuevas.length, COLUMNAS.length)
+      .setValues(nuevas);
   }
   return { insertadas: nuevas.length, duplicadas: filas.length - nuevas.length };
 }
@@ -96,9 +157,20 @@ function escribir(nombreHoja, filas) {
 function leerHoja(sh) {
   const ult = sh.getLastRow();
   if (ult < 2) return [];
-  const vals = sh.getRange(2, 1, ult - 1, 11).getValues();
-  const cab = sh.getRange(1, 1, 1, 11).getValues()[0];
+  const cab = sh.getRange(1, 1, 1, COLUMNAS.length).getValues()[0];
+  const vals = sh.getRange(2, 1, ult - 1, COLUMNAS.length).getValues();
   return vals
     .filter(r => r.some(c => c !== ''))
     .map(r => { const o = {}; cab.forEach((h, i) => { o[h] = r[i]; }); return o; });
+}
+
+function numeroSemanaISO(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dia = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - dia);
+  const inicio = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return {
+    numero: Math.ceil(((t - inicio) / 86400000 + 1) / 7),
+    anio: t.getUTCFullYear()
+  };
 }
